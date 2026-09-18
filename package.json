@@ -1,0 +1,22 @@
+{
+  "name": "@futurenow/inference",
+  "version": "1.0.0",
+  "description": "FutureNow local AI inference module — hardware detection, embedding, keyword scoring, semantic scoring, LLM generation, sidecar lifecycle, and 3-tier vector cache.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/run-all.js"
+  },
+  "keywords": ["futurenow", "inference", "llm", "embedding", "npu", "gpu", "onnx"],
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "sql.js": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "sql.js": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
