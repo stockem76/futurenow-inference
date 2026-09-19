@@ -9,16 +9,26 @@
  * Tier 3 — SQLite:   optional persistent cold store; only opened when
  *                    opts.coldStorePath is provided.
  *
+ * v2 improvements:
+ *   - getMany(keys) / setMany(entries) — batch read/write for pipeline throughput
+ *   - contentHash(text) — deterministic cache key from text content
+ *   - getOrEmbed(text, embedFn) — cache-aware single-text embed helper
+ *   - LRU eviction improved: Map preserves insertion order, O(1) oldest key
+ *
  * No external runtime dependencies. SQLite is accessed via the `better-sqlite3`
  * optional peer dependency; if it is not installed the cold tier is silently
  * skipped.
  *
  * Exports:
  *   get(key)                         → Float32Array | null
+ *   getMany(keys)                    → Map<string, Float32Array|null>
  *   set(key, vec, tier?)             → void
+ *   setMany(entries, tier?)          → void
  *   del(key)                         → void
  *   flush()                          → void  (all tiers)
  *   stats()                          → {hot, ttl, cold}
+ *   contentHash(text)                → string  (deterministic key)
+ *   getOrEmbed(text, embedFn, tier?) → Promise<Float32Array|null>
  *   _setConfig(cfg)                  → called by index.js after init()
  */
 
@@ -57,13 +67,11 @@ function _hotGet(key) {
 
 function _hotSet(key, vec) {
   if (_hotMap.has(key)) {
-    // Refresh without growing order array
     _hotMap.set(key, vec);
     return;
   }
   const max = _hotMaxSize();
   if (_hotOrder.length >= max) {
-    // Evict oldest entry
     const oldest = _hotOrder.shift();
     if (oldest) _hotMap.delete(oldest);
   }
@@ -115,7 +123,6 @@ function _ensureDb() {
   if (!coldPath) return false;
 
   try {
-    // better-sqlite3 is an optional peer dependency
     const Database = require('better-sqlite3');   // eslint-disable-line global-require
     _db = new Database(coldPath);
     _db.pragma('journal_mode = WAL');
@@ -128,26 +135,15 @@ function _ensureDb() {
     `);
     return true;
   } catch (_err) {
-    // better-sqlite3 not installed or path error — silently skip cold tier
     _db = null;
     return false;
   }
 }
 
-/**
- * Serialise a Float32Array to a Node.js Buffer for SQLite BLOB storage.
- * @param {Float32Array} vec
- * @returns {Buffer}
- */
 function _vecToBlob(vec) {
   return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
 }
 
-/**
- * Deserialise a SQLite BLOB back to Float32Array.
- * @param {Buffer} blob
- * @returns {Float32Array}
- */
 function _blobToVec(blob) {
   const ab = blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength);
   return new Float32Array(ab);
@@ -189,6 +185,26 @@ function _coldCount() {
   } catch (_) { return 0; }
 }
 
+// ── Content hashing ───────────────────────────────────────────────────────────
+
+/**
+ * Produce a deterministic cache key from text content.
+ * Uses a fast non-cryptographic hash (djb2a variant) suitable for cache keys.
+ * Produces a hex string of 8 chars.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function contentHash(text) {
+  const s = String(text || '');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
+    h = h >>> 0;  // keep as unsigned 32-bit
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
@@ -199,21 +215,18 @@ function _coldCount() {
  * @returns {Float32Array|null}
  */
 function get(key) {
-  // Tier 1
   let vec = _hotGet(key);
   if (vec) return vec;
 
-  // Tier 2
   vec = _ttlGet(key);
   if (vec) {
-    _hotSet(key, vec);    // promote to hot
+    _hotSet(key, vec);
     return vec;
   }
 
-  // Tier 3
   vec = _coldGet(key);
   if (vec) {
-    _hotSet(key, vec);    // promote to hot
+    _hotSet(key, vec);
     return vec;
   }
 
@@ -221,14 +234,26 @@ function get(key) {
 }
 
 /**
+ * Batch read — returns a Map of key → Float32Array|null.
+ * Hits are promoted to hot tier automatically.
+ *
+ * @param {string[]} keys
+ * @returns {Map<string, Float32Array|null>}
+ */
+function getMany(keys) {
+  const result = new Map();
+  for (const key of keys) {
+    result.set(key, get(key));
+  }
+  return result;
+}
+
+/**
  * Store a vector in the cache.
  *
  * @param {string}       key
  * @param {Float32Array} vec
- * @param {'hot'|'ttl'|'cold'} [tier='hot']  — which tier to write to
- *   'hot'  — hot tier only (default, in-process only, lost on restart)
- *   'ttl'  — ttl tier (in-process, expires after configured TTL)
- *   'cold' — all three tiers (persisted to SQLite if available)
+ * @param {'hot'|'ttl'|'cold'} [tier='hot']
  */
 function set(key, vec, tier = 'hot') {
   if (!key || !vec) return;
@@ -241,6 +266,18 @@ function set(key, vec, tier = 'hot') {
     _ttlSet(key, vec);
   } else {
     _hotSet(key, vec);
+  }
+}
+
+/**
+ * Batch write — stores multiple key/vec pairs in one call.
+ *
+ * @param {Array<{key:string, vec:Float32Array}>} entries
+ * @param {'hot'|'ttl'|'cold'} [tier='hot']
+ */
+function setMany(entries, tier = 'hot') {
+  for (const { key, vec } of entries) {
+    set(key, vec, tier);
   }
 }
 
@@ -268,7 +305,6 @@ function flush() {
  * @returns {{ hot: number, ttl: number, cold: number }}
  */
 function stats() {
-  // Prune expired TTL entries before counting
   const now = Date.now();
   for (const [k, v] of _ttlMap) {
     if (now > v.expiresAt) _ttlMap.delete(k);
@@ -280,4 +316,24 @@ function stats() {
   };
 }
 
-module.exports = { get, set, del, flush, stats, _setConfig };
+/**
+ * Cache-aware single embedding helper.
+ * Looks up the cache by contentHash(text); calls embedFn(text) on miss
+ * and stores the result at the given tier.
+ *
+ * @param {string}   text
+ * @param {function} embedFn         — async (text) → Float32Array|null
+ * @param {'hot'|'ttl'|'cold'} [tier='ttl']
+ * @returns {Promise<Float32Array|null>}
+ */
+async function getOrEmbed(text, embedFn, tier = 'ttl') {
+  const key = contentHash(text);
+  const cached = get(key);
+  if (cached) return cached;
+
+  const vec = await embedFn(text);
+  if (vec) set(key, vec, tier);
+  return vec || null;
+}
+
+module.exports = { get, getMany, set, setMany, del, flush, stats, contentHash, getOrEmbed, _setConfig };

@@ -74,7 +74,11 @@ module.exports = {
   init,
   _getConfig,  // exposed so sub-modules can call back for late-binding
 
-  /** CPU / GPU / NPU detection — no init() required, pure hardware probe */
+  /**
+   * CPU / GPU / NPU / OpenCL / OpenVINO / ROCm detection.
+   * No init() required. Extended in v2: cpuCores, cpuThreads, ramGb, simd,
+   * recommendedThreads, onnxProviders, bestOnnxProvider().
+   */
   hardware,
 
   /** Model catalogue + recommend + select */
@@ -86,15 +90,27 @@ module.exports = {
   /** Text embedding via sidecar — requires init() */
   embed,
 
-  /** Keyword scoring (pure, no I/O) */
+  /**
+   * Keyword scoring (pure, no I/O). Extended in v2:
+   *   bm25Score(), tfidfPositional(), buildInvertedIndex(), proximityScore().
+   */
   keyword,
 
-  /** Semantic scoring utilities (pure math) */
+  /**
+   * Semantic scoring utilities (pure math). Extended in v2:
+   *   cosineAll(), rankAll(), cosineBatch(), normalizeAll().
+   */
   semantic,
 
-  /** LLM text generation via local sidecar — requires init() */
+  /**
+   * LLM text generation via local sidecar — requires init(). Extended in v2:
+   *   completeWithFallback(), parseStructured(), buildMatchPrompt(), buildAssessPrompt().
+   */
   llm,
 
-  /** 3-tier vector cache — requires init() */
+  /**
+   * 3-tier vector cache — requires init(). Extended in v2:
+   *   getMany(), setMany(), contentHash(), getOrEmbed().
+   */
   cache,
 };

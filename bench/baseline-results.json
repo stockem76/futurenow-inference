@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-09-19T02:48:35.244Z",
+  "iters": 50000,
+  "results": [
+    {
+      "label": "keyword.computeKeywordScore (exact)",
+      "iters": 50000,
+      "totalMs": 199.201,
+      "avgMs": 0.004,
+      "opsPerSec": 251002
+    },
+    {
+      "label": "keyword.computeKeywordScore (partial)",
+      "iters": 50000,
+      "totalMs": 496.337,
+      "avgMs": 0.0099,
+      "opsPerSec": 100738
+    },
+    {
+      "label": "keyword.score (12 pract skills vs 4+3)",
+      "iters": 50000,
+      "totalMs": 8754.224,
+      "avgMs": 0.1751,
+      "opsPerSec": 5712
+    },
+    {
+      "label": "semantic.cosine (384-dim Float32Array)",
+      "iters": 50000,
+      "totalMs": 12.855,
+      "avgMs": 0.0003,
+      "opsPerSec": 3889567
+    },
+    {
+      "label": "semantic.normalize",
+      "iters": 50000,
+      "totalMs": 1.52,
+      "avgMs": 0,
+      "opsPerSec": 32894737
+    },
+    {
+      "label": "semantic.composite",
+      "iters": 50000,
+      "totalMs": 0.897,
+      "avgMs": 0,
+      "opsPerSec": 55728934
+    },
+    {
+      "label": "keyword.score × 50 candidates (batch)",
+      "iters": 5000,
+      "totalMs": 30595.05,
+      "avgMs": 6.119,
+      "opsPerSec": 163
+    },
+    {
+      "label": "semantic.cosine × 50 vectors (batch)",
+      "iters": 5000,
+      "totalMs": 64.897,
+      "avgMs": 0.013,
+      "opsPerSec": 77045
+    }
+  ]
+}
