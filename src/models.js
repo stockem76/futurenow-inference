@@ -95,15 +95,29 @@ function _modelDir() {
  * available is true when the .gguf file exists in modelDir.
  * @returns {Array}
  */
+// Qwen 2.5 7B split-file pattern — bartowski multi-part GGUF download
+const QWEN_7B_SPLIT = [
+  'qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf',
+  'qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf',
+];
+
+function _isAvailable(dir, m) {
+  if (!dir) return false;
+  try {
+    if (fs.existsSync(path.join(dir, m.filename))) return true;
+    // For the Qwen 2.5 7B model, also accept the two-part split files
+    if (m.id === 'qwen-2.5-7b-instruct-q4') {
+      return QWEN_7B_SPLIT.every(f => fs.existsSync(path.join(dir, f)));
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
 function catalogue() {
   const dir = _modelDir();
-  return CATALOGUE.map(m => {
-    let available = false;
-    if (dir) {
-      try { available = fs.existsSync(path.join(dir, m.filename)); } catch (_) { /* ignore */ }
-    }
-    return Object.assign({}, m, { available });
-  });
+  return CATALOGUE.map(m => Object.assign({}, m, { available: _isAvailable(dir, m) }));
 }
 
 /**
@@ -156,11 +170,13 @@ function getActive() {
   const dir = _modelDir();
   const m   = CATALOGUE.find(m => m.id === _activeId);
   if (!m) return null;
-  let available = false;
-  if (dir) {
-    try { available = fs.existsSync(path.join(dir, m.filename)); } catch (_) { /* ignore */ }
+  const available = _isAvailable(dir, m);
+  // For split Qwen, modelPath points to part-1 (llama.cpp loads both automatically)
+  let modelPath = dir ? path.join(dir, m.filename) : null;
+  if (!modelPath && dir && m.id === 'qwen-2.5-7b-instruct-q4') {
+    modelPath = path.join(dir, QWEN_7B_SPLIT[0]);
   }
-  return Object.assign({}, m, { available, modelPath: dir ? path.join(dir, m.filename) : null });
+  return Object.assign({}, m, { available, modelPath });
 }
 
 /**
